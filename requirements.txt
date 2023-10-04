@@ -5,3 +5,4 @@ librosa
 datasets>=2.9.0
 accelerate
 torchvision
+tensorboard
