@@ -7,3 +7,4 @@ accelerate
 torchvision
 tensorboard
 torch-tb-profiler
+tqdm
