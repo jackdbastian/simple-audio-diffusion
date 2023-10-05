@@ -6,3 +6,4 @@
 - push model inference to a server?
 - train incrementally on streaming data?
 - fine tune on streaming data?
+- make it more efficient!

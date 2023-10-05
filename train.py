@@ -5,6 +5,7 @@ from diffusers import UNet2DModel, DDIMScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import EMAModel
 from accelerate import Accelerator
+import os
 
 
 # Accelerator params
@@ -32,7 +33,7 @@ NUM_EPOCHS=100
 # EMAModel Params
 EMA_INV_GAMMA=1.0
 EMA_POWER=3 /4
-EMA_MAX_DECAY=
+EMA_MAX_DECAY=0.99999
 
 
 accelerator = Accelerator(
@@ -110,3 +111,9 @@ ema_model = EMAModel(
     power=EMA_POWER,
     max_value=EMA_MAX_DECAY,
 )
+
+if accelerator.is_main_process:
+    run = os.path.split(__file__)[-1].split(".")[0]
+    accelerator.init_trackers(run)
+
+
