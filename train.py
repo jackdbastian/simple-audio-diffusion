@@ -1,6 +1,7 @@
 from datasets import load_from_disk
 from torchvision.transforms import Compose, Normalize, ToTensor
 import torch
+import torch.nn.functional as F
 from diffusers import UNet2DModel, DDIMScheduler
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import EMAModel
@@ -32,6 +33,7 @@ LR_WARMUP_STEPS=500
 NUM_EPOCHS=100
 
 # EMAModel Params
+USE_EMA=True
 EMA_INV_GAMMA=1.0
 EMA_POWER=3 /4
 EMA_MAX_DECAY=0.99999
@@ -128,27 +130,19 @@ for epoch in range(NUM_EPOCHS):
                         disable=not accelerator.is_local_main_process)
     progress_bar.set_description(f"Epoch {epoch}")
 
-    if epoch < args.start_epoch:
+    if epoch < START_EPOCH:
         for step in range(len(train_dataloader)):
             optimizer.step()
             lr_scheduler.step()
             progress_bar.update(1)
             global_step += 1
-        if epoch == START_EPOCH - 1 and args.use_ema:
+        if epoch == START_EPOCH - 1 and USE_EMA:
             ema_model.optimization_step = global_step
         continue
 
     model.train()
     for step, batch in enumerate(train_dataloader):
         clean_images = batch["input"]
-
-        if vqvae is not None:
-            vqvae.to(clean_images.device)
-            with torch.no_grad():
-                clean_images = vqvae.encode(
-                    clean_images).latent_dist.sample()
-            # Scale latent images to ensure approximately unit variance
-            clean_images = clean_images * 0.18215
 
         # Sample noise that we'll add to the images
         noise = torch.randn(clean_images.shape).to(clean_images.device)
@@ -163,16 +157,11 @@ for epoch in range(NUM_EPOCHS):
 
         # Add noise to the clean images according to the noise magnitude at each timestep
         # (this is the forward diffusion process)
-        noisy_images = noise_scheduler.add_noise(clean_images, noise,
-                                                    timesteps)
+        noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
 
         with accelerator.accumulate(model):
             # Predict the noise residual
-            if args.encodings is not None:
-                noise_pred = model(noisy_images, timesteps,
-                                    batch["encoding"])["sample"]
-            else:
-                noise_pred = model(noisy_images, timesteps)["sample"]
+            noise_pred = model(noisy_images, timesteps)["sample"]
             loss = F.mse_loss(noise_pred, noise)
             accelerator.backward(loss)
 
@@ -180,7 +169,7 @@ for epoch in range(NUM_EPOCHS):
                 accelerator.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             lr_scheduler.step()
-            if args.use_ema:
+            if USE_EMA:
                 ema_model.step(model)
             optimizer.zero_grad()
 
@@ -192,11 +181,13 @@ for epoch in range(NUM_EPOCHS):
             "lr": lr_scheduler.get_last_lr()[0],
             "step": global_step,
         }
-        if args.use_ema:
+        if USE_EMA:
             logs["ema_decay"] = ema_model.decay
         progress_bar.set_postfix(**logs)
         accelerator.log(logs, step=global_step)
     progress_bar.close()
 
     accelerator.wait_for_everyone()
+
+accelerator.end_training()
 

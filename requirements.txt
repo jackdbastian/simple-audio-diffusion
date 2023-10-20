@@ -8,3 +8,5 @@ torchvision
 tensorboard
 torch-tb-profiler
 tqdm
+matplotlib
+pillow
